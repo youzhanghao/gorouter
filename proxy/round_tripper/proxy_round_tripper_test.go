@@ -3,6 +3,7 @@ package round_tripper_test
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -203,13 +204,26 @@ var _ = Describe("ProxyRoundTripper", func() {
 			})
 
 			It("logs the error and reports the endpoint failure", func() {
-				// TODO: Test "iter.EndpointFailed"
+				for i := 0; i < 3; i++ {
+					endpoint = route.NewEndpoint(&route.EndpointOpts{
+						AppId:                fmt.Sprintf("appId%d", i),
+						Host:                 fmt.Sprintf("2.2.2.%d", i),
+						Port:                 8080,
+						PrivateInstanceId:    fmt.Sprintf("instanceId2%d", i),
+						PrivateInstanceIndex: fmt.Sprintf("%d", i),
+					})
+				}
 				_, err := proxyRoundTripper.RoundTrip(req)
 				Expect(err).To(HaveOccurred())
 
 				for i := 0; i < 3; i++ {
 					Expect(logger.Buffer()).To(gbytes.Say(`backend-endpoint-failed`))
 				}
+
+				itr := routePool.Endpoints("", "")
+				ep2 := itr.Next()
+				ep1 := itr.Next()
+				Expect(ep1).To(Equal(ep2))
 			})
 
 			It("calls the error handler", func() {
@@ -266,12 +280,26 @@ var _ = Describe("ProxyRoundTripper", func() {
 				Expect(logger.Buffer()).ToNot(gbytes.Say(`route-service`))
 			})
 
-			It("does not log the error or report the endpoint failure", func() {
-				// TODO: Test "iter.EndpointFailed"
+			It("does log the error and reports the endpoint failure", func() {
+				endpoint = route.NewEndpoint(&route.EndpointOpts{
+					AppId:                "appId2",
+					Host:                 "2.2.2.2",
+					Port:                 8080,
+					PrivateInstanceId:    "instanceId2",
+					PrivateInstanceIndex: "2",
+				})
+				added := routePool.Put(endpoint)
+				Expect(added).To(Equal(route.ADDED))
+
 				_, err := proxyRoundTripper.RoundTrip(req)
 				Expect(err).To(MatchError("potato"))
 
-				Expect(logger.Buffer()).ToNot(gbytes.Say(`backend-endpoint-failed`))
+				Expect(logger.Buffer()).To(gbytes.Say(`backend-endpoint-failed`))
+
+				itr := routePool.Endpoints("", "")
+				ep2 := itr.Next()
+				ep1 := itr.Next()
+				Expect(ep1).To(Equal(ep2))
 			})
 		})
 
@@ -314,7 +342,6 @@ var _ = Describe("ProxyRoundTripper", func() {
 			})
 
 			It("does not report the endpoint failure", func() {
-				// TODO: Test "iter.EndpointFailed"
 				_, err := proxyRoundTripper.RoundTrip(req)
 				Expect(err).To(MatchError(handler.NoEndpointsAvailable))
 
@@ -353,7 +380,6 @@ var _ = Describe("ProxyRoundTripper", func() {
 			})
 
 			It("logs one error and reports the endpoint failure", func() {
-				// TODO: Test "iter.EndpointFailed"
 				_, err := proxyRoundTripper.RoundTrip(req)
 				Expect(err).ToNot(HaveOccurred())
 
@@ -394,7 +420,6 @@ var _ = Describe("ProxyRoundTripper", func() {
 			})
 
 			It("does not log an error or report the endpoint failure", func() {
-				// TODO: Test "iter.EndpointFailed"
 				_, err := proxyRoundTripper.RoundTrip(req)
 				Expect(err).ToNot(HaveOccurred())
 
@@ -658,12 +683,11 @@ var _ = Describe("ProxyRoundTripper", func() {
 						Expect(err).To(MatchError("banana"))
 					})
 
-					It("does not log the error or report the endpoint failure", func() {
-						// TODO: Test "iter.EndpointFailed"
+					It("does log the error or report the endpoint failure", func() {
 						_, err := proxyRoundTripper.RoundTrip(req)
 						Expect(err).To(MatchError("banana"))
 
-						Expect(logger.Buffer()).ToNot(gbytes.Say(`route-service-connection-failed`))
+						Expect(logger.Buffer()).To(gbytes.Say(`route-service-connection-failed`))
 					})
 				})
 			})

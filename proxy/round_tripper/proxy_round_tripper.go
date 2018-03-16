@@ -142,11 +142,21 @@ func (rt *roundTripper) RoundTrip(request *http.Request) (*http.Response, error)
 				request.URL.Scheme = "http"
 			}
 			res, err = rt.backendRoundTrip(request, endpoint, iter)
-			if err == nil || !rt.retryableClassifier.Classify(err) {
-				break
+
+			if err != nil {
+				iter.EndpointFailed(err)
+				logger.Error("backend-endpoint-failed", zap.Error(err))
+				if rt.retryableClassifier.Classify(err) {
+					continue
+				}
 			}
-			iter.EndpointFailed(err)
-			logger.Error("backend-endpoint-failed", zap.Error(err))
+			break
+
+			// if err == nil || !rt.retryableClassifier.Classify(err) {
+			// 	break
+			// }
+			// iter.EndpointFailed(err)
+			// logger.Error("backend-endpoint-failed", zap.Error(err))
 		} else {
 			logger.Debug(
 				"route-service",
@@ -180,10 +190,11 @@ func (rt *roundTripper) RoundTrip(request *http.Request) (*http.Response, error)
 				}
 				break
 			}
+			logger.Error("route-service-connection-failed", zap.Error(err))
 			if !rt.retryableClassifier.Classify(err) {
 				break
 			}
-			logger.Error("route-service-connection-failed", zap.Error(err))
+			// logger.Error("route-service-connection-failed", zap.Error(err))
 		}
 	}
 
