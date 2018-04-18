@@ -116,15 +116,14 @@ func NewProxy(
 		ModifyResponse: p.modifyResponse,
 	}
 
+	routeServiceHandler := handlers.NewRouteService(routeServiceConfig, logger, registry)
+
 	zipkinHandler := handlers.NewZipkin(c.Tracing.EnableZipkin, c.ExtraHeadersToLog, logger)
 	n := negroni.New()
 	n.Use(handlers.NewRequestInfo())
 	n.Use(handlers.NewProxyWriter(logger))
 	n.Use(handlers.NewVcapRequestIdHeader(logger))
 	n.Use(handlers.NewHTTPStartStop(dropsonde.DefaultEmitter, logger))
-	if c.ForwardedClientCert != config.ALWAYS_FORWARD {
-		n.Use(handlers.NewClientCert(c.ForwardedClientCert))
-	}
 	n.Use(handlers.NewAccessLog(accessLogger, zipkinHandler.HeadersToLog(), logger))
 	n.Use(handlers.NewReporter(reporter, logger))
 
@@ -132,7 +131,21 @@ func NewProxy(
 	n.Use(zipkinHandler)
 	n.Use(handlers.NewProtocolCheck(logger))
 	n.Use(handlers.NewLookup(registry, reporter, logger, c.Backends.MaxConns))
-	n.Use(handlers.NewRouteService(routeServiceConfig, logger, registry))
+	if c.ForwardedClientCert != config.ALWAYS_FORWARD {
+		n.Use(handlers.NewClientCert(
+			// p.skipSanitization,
+			func(req *http.Request) bool {
+				validatedHasBeenToRouteService, err := routeServiceHandler.(*handlers.RouteService).ValidatedHasBeenToRouteService(req)
+				if err != nil {
+					panic(err)
+					// return false
+				}
+				return p.skipSanitization(req) || validatedHasBeenToRouteService
+			},
+			c.ForwardedClientCert,
+		))
+	}
+	n.Use(routeServiceHandler)
 	n.Use(p)
 	n.Use(&handlers.XForwardedProto{
 		SkipSanitization:         p.skipSanitization,

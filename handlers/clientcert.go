@@ -13,26 +13,29 @@ import (
 const xfcc = "X-Forwarded-Client-Cert"
 
 type clientCert struct {
-	forwardingMode string
+	skipSanitization func(req *http.Request) bool
+	forwardingMode   string
 }
 
-func NewClientCert(forwardingMode string) negroni.Handler {
+func NewClientCert(skipSanitization func(req *http.Request) bool, forwardingMode string) negroni.Handler {
 	return &clientCert{
-		forwardingMode: forwardingMode,
+		skipSanitization: skipSanitization,
+		forwardingMode:   forwardingMode,
 	}
 }
 
 func (c *clientCert) ServeHTTP(rw http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
-	if c.forwardingMode == config.FORWARD {
-		if r.TLS == nil || len(r.TLS.PeerCertificates) == 0 {
+	if !c.skipSanitization(r) {
+		switch c.forwardingMode {
+		case config.FORWARD:
+			if r.TLS == nil || len(r.TLS.PeerCertificates) == 0 {
+				r.Header.Del(xfcc)
+			}
+		case config.SANITIZE_SET:
 			r.Header.Del(xfcc)
-		}
-	}
-
-	if c.forwardingMode == config.SANITIZE_SET {
-		r.Header.Del(xfcc)
-		if r.TLS != nil {
-			sanitizeHeader(r)
+			if r.TLS != nil {
+				sanitizeHeader(r)
+			}
 		}
 	}
 	next(rw, r)
